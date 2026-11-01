@@ -18,6 +18,7 @@ from app.web_search_tool import get_web_search_tool_definition, create_web_searc
 from app.audio_recording_service import AudioRecordingService
 from app.session_manager import SessionManager
 from app.websocket_handler import WebSocketHandler
+from app import debug_dump
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +63,12 @@ def _logged_parse_server_event(message):
             extra = (f" model={getattr(sess, 'model', None)!r}"
                      f" turn_detection={getattr(inp, 'turn_detection', None)!r}"
                      f" noise={getattr(inp, 'noise_reduction', None)!r}")
+        elif t in ("input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"):
+            extra = f" audio_ms={getattr(evt, 'audio_start_ms', None) or getattr(evt, 'audio_end_ms', None)}"
+        elif t.endswith("transcription.completed"):
+            extra = f" {getattr(evt, 'transcript', '')!r}"
         logger.info(f"⬅️ openai {t}{extra}"[:700])
+        debug_dump.mark(f"{t}{extra}"[:200])
     return evt
 
 
@@ -138,6 +144,10 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
             return
         if isinstance(realtime_message, dict):
             kind = realtime_message.get("type")
+            if kind == "input_audio_buffer.append":
+                debug_dump.add_sent(realtime_message.get("audio") or "")
+            elif kind == "input_audio_buffer.clear":
+                debug_dump.cut("turn")
             if kind != "input_audio_buffer.append":
                 extra = ""
                 if kind == "session.update":

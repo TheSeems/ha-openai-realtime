@@ -1,3 +1,7 @@
+## 0.6.3 (TheSeems fork)
+
+Debugging: each turn's mic audio (raw from the device and exactly what's sent to OpenAI) is saved as WAVs in /media/rt-debug, newest 20 turns, with the VAD events and their offsets. Transcripts and speech start/stop offsets are in the log too.
+
 ## 0.6.2 (TheSeems fork)
 
 More diagnostics: every client event sent to OpenAI (except audio chunks) and the level of the resampled audio.

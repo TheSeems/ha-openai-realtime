@@ -20,6 +20,7 @@ from pipecat.services.openai.realtime import events as openai_rt_events
 from app.raw_audio_serializer import RawAudioSerializer
 from app.session_manager import SessionManager
 from app.audio_recording_service import AudioRecordingService
+from app import debug_dump
 from app.phase_emitter import PhaseEmitter
 from app.transcript_logger import TranscriptLogger
 
@@ -104,6 +105,7 @@ class InputResampler(FrameProcessor):
                 pass
             self._stat_frames += 1
             self._stat_bytes += len(frame.audio)
+            debug_dump.add_raw(frame.audio)
             now = time.monotonic()
             if now - self._stat_t >= 1.0:
                 rms = (self._stat_sq / self._stat_n) ** 0.5 if self._stat_n else 0.0
