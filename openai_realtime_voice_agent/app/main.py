@@ -136,6 +136,17 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
                 why = "disconnecting" if self._disconnecting else "no socket"
                 logger.warning(f"⚠️ openai socket not open ({why}) — dropping {kind}")
             return
+        if isinstance(realtime_message, dict):
+            kind = realtime_message.get("type")
+            if kind != "input_audio_buffer.append":
+                extra = ""
+                if kind == "session.update":
+                    sess = realtime_message.get("session") or {}
+                    inp = (sess.get("audio") or {}).get("input") or {}
+                    extra = f" turn_detection={inp.get('turn_detection')!r} noise={inp.get('noise_reduction')!r}"
+                elif kind == "response.create":
+                    extra = f" {str(realtime_message.get('response'))[:200]}"
+                logger.info(f"➡️ openai {kind}{extra}"[:500])
         await super()._ws_send(realtime_message)
 
     async def reset_conversation(self):  # type: ignore[override]

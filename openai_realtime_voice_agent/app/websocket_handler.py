@@ -107,7 +107,12 @@ class InputResampler(FrameProcessor):
             now = time.monotonic()
             if now - self._stat_t >= 1.0:
                 rms = (self._stat_sq / self._stat_n) ** 0.5 if self._stat_n else 0.0
-                logger.info(f"🎙️ mic 1s: {self._stat_frames} frames, {self._stat_bytes} B, rms={rms:.0f}, peak={self._stat_peak}")
+                on = getattr(self, "_ostat_n", 0)
+                orms = (getattr(self, "_ostat_sq", 0.0) / on) ** 0.5 if on else 0.0
+                logger.info(f"🎙️ mic 1s: {self._stat_frames} frames, {self._stat_bytes} B, rms={rms:.0f}, peak={self._stat_peak}"
+                            f" | resampled {getattr(self, '_ostat_bytes', 0)} B, rms={orms:.0f}, peak={getattr(self, '_ostat_peak', 0)}")
+                self._ostat_peak = self._ostat_n = self._ostat_bytes = 0
+                self._ostat_sq = 0.0
                 self._stat_t = now
                 self._stat_frames = self._stat_bytes = self._stat_peak = self._stat_n = 0
                 self._stat_sq = 0.0
@@ -124,6 +129,19 @@ class InputResampler(FrameProcessor):
             # drop those frames — the samples stay buffered and come out next call.
             if not resampled:
                 return
+            # TheSeems fork: level of the resampled audio too, so a broken resample shows up.
+            try:
+                import array
+                b = array.array("h")
+                b.frombytes(resampled[: len(resampled) // 2 * 2])
+                subo = b[:: max(1, len(b) // 160)]
+                if subo:
+                    self._ostat_peak = max(getattr(self, "_ostat_peak", 0), max(abs(x) for x in subo))
+                    self._ostat_sq = getattr(self, "_ostat_sq", 0.0) + sum(x * x for x in subo)
+                    self._ostat_n = getattr(self, "_ostat_n", 0) + len(subo)
+                self._ostat_bytes = getattr(self, "_ostat_bytes", 0) + len(resampled)
+            except Exception:
+                pass
             if not self._logged:
                 logger.info(
                     f"🎙️ Resampling device input {frame.sample_rate}Hz -> {self._out_rate}Hz for OpenAI"
