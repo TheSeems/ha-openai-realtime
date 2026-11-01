@@ -79,12 +79,38 @@ class InputResampler(FrameProcessor):
         self._out_rate = out_rate
         self._resampler = create_stream_resampler()
         self._logged = False
+        self._stat_t = 0.0
+        self._stat_frames = self._stat_bytes = self._stat_peak = self._stat_n = 0
+        self._stat_sq = 0.0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, InputAudioRawFrame) and frame.sample_rate != self._out_rate:
             if not frame.audio:
                 return  # nothing to resample / forward; don't emit empty audio
+            # TheSeems fork: once a second, log how much mic audio arrived and how loud it was
+            # (int16 at the device rate), so "silence from the box" and "OpenAI ignored speech"
+            # can be told apart in the log.
+            try:
+                import array
+                a = array.array("h")
+                a.frombytes(frame.audio[: len(frame.audio) // 2 * 2])
+                sub = a[:: max(1, len(a) // 160)]
+                if sub:
+                    self._stat_peak = max(self._stat_peak, max(abs(x) for x in sub))
+                    self._stat_sq += sum(x * x for x in sub)
+                    self._stat_n += len(sub)
+            except Exception:
+                pass
+            self._stat_frames += 1
+            self._stat_bytes += len(frame.audio)
+            now = time.monotonic()
+            if now - self._stat_t >= 1.0:
+                rms = (self._stat_sq / self._stat_n) ** 0.5 if self._stat_n else 0.0
+                logger.info(f"🎙️ mic 1s: {self._stat_frames} frames, {self._stat_bytes} B, rms={rms:.0f}, peak={self._stat_peak}")
+                self._stat_t = now
+                self._stat_frames = self._stat_bytes = self._stat_peak = self._stat_n = 0
+                self._stat_sq = 0.0
             try:
                 resampled = await self._resampler.resample(
                     frame.audio, frame.sample_rate, self._out_rate

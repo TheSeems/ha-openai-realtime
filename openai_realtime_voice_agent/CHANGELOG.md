@@ -1,3 +1,7 @@
+## 0.6.1 (TheSeems fork)
+
+Diagnostics only: the add-on log now shows every OpenAI server event (errors in full, the accepted turn detection), whether the OpenAI socket is open when something is sent, and once a second how much mic audio arrived and how loud it was.
+
 # Changelog
 
 All notable changes to this add-on. Newest first.

@@ -3,6 +3,7 @@ import os
 import sys
 import asyncio
 import logging
+import time
 from typing import Optional
 import dotenv
 from pipecat.pipeline.pipeline import Pipeline
@@ -29,6 +30,44 @@ logger = logging.getLogger(__name__)
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("__main__").setLevel(logging.INFO)
+
+# --- TheSeems fork: diagnostics ---------------------------------------------
+# Log every OpenAI server event except the per-chunk deltas, with the full text
+# of errors and the accepted turn detection, so a session that silently went
+# wrong is visible in the add-on log.
+from pipecat.services.openai.realtime import events as _rt_events  # noqa: E402
+
+_QUIET_EVENTS = {
+    "response.output_audio.delta", "response.output_audio_transcript.delta",
+    "response.output_text.delta", "response.function_call_arguments.delta",
+    "conversation.item.input_audio_transcription.delta", "rate_limits.updated",
+    "response.content_part.added", "response.content_part.done",
+    "response.output_item.added", "response.output_item.done",
+    "response.output_audio.done", "response.output_audio_transcript.done",
+    "conversation.item.added", "conversation.item.done", "conversation.item.created",
+}
+_orig_parse_server_event = _rt_events.parse_server_event
+
+
+def _logged_parse_server_event(message):
+    evt = _orig_parse_server_event(message)
+    t = getattr(evt, "type", "?")
+    if t not in _QUIET_EVENTS:
+        extra = ""
+        if t == "error":
+            extra = f" {getattr(evt, 'error', None)!r}"
+        elif t in ("session.created", "session.updated"):
+            sess = getattr(evt, "session", None)
+            inp = getattr(getattr(sess, "audio", None), "input", None)
+            extra = (f" model={getattr(sess, 'model', None)!r}"
+                     f" turn_detection={getattr(inp, 'turn_detection', None)!r}"
+                     f" noise={getattr(inp, 'noise_reduction', None)!r}")
+        logger.info(f"⬅️ openai {t}{extra}"[:700])
+    return evt
+
+
+_rt_events.parse_server_event = _logged_parse_server_event
+# ---------------------------------------------------------------------------
 
 
 def _resolve_choice(env_var: str, custom_env_var: str, default: str) -> str:
@@ -77,6 +116,27 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
 
     async def _truncate_current_audio_response(self):  # type: ignore[override]
         return
+
+    # --- TheSeems fork: diagnostics ---
+    async def _connect(self):  # type: ignore[override]
+        logger.info(f"🔌 openai connect: {getattr(self, 'base_url', '?')}")
+        await super()._connect()
+        logger.info("🔌 openai connect result: socket %s", "open" if self._websocket else "NONE")
+
+    async def _disconnect(self):  # type: ignore[override]
+        logger.info("🔌 openai disconnect")
+        await super()._disconnect()
+
+    async def _ws_send(self, realtime_message):  # type: ignore[override]
+        if self._disconnecting or not self._websocket:
+            now = time.monotonic()
+            if now - getattr(self, "_drop_logged_at", 0.0) > 2.0:
+                self._drop_logged_at = now
+                kind = realtime_message.get("type") if isinstance(realtime_message, dict) else type(realtime_message).__name__
+                why = "disconnecting" if self._disconnecting else "no socket"
+                logger.warning(f"⚠️ openai socket not open ({why}) — dropping {kind}")
+            return
+        await super()._ws_send(realtime_message)
 
     async def reset_conversation(self):  # type: ignore[override]
         """Reconnect WITHOUT forcing a response on the reconnected session.
