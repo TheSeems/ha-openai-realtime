@@ -1,3 +1,7 @@
+## 0.6.5 (TheSeems fork)
+
+The question follow-up opens the mic at most once per wake word, so a question answered by room noise can't loop.
+
 ## 0.6.4 (TheSeems fork)
 
 When a reply ends with a question, the add-on tells the box to chime and open the mic for the answer (the firmware's `request_follow_up`), so you can answer without the wake word. Use it with `follow_up_listen_seconds: 0`: the mic then stays shut after replies that aren't questions, which stops background noise from becoming turns. Turn it off with the env `FOLLOW_UP_ON_QUESTION=false`.

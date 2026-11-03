@@ -408,6 +408,7 @@ class WebSocketHandler:
         self.port = port
         self.session_manager = session_manager
         self.audio_recording_service = audio_recording_service
+        self._followup_used = False  # TheSeems fork: see on_question in build_pipeline
         self.follow_up_ms = max(0, int(follow_up_ms))
         self.follow_up_open_delay_ms = max(0, int(follow_up_open_delay_ms))
         self.wake_open_delay_ms = max(0, int(wake_open_delay_ms))
@@ -533,9 +534,15 @@ class WebSocketHandler:
         # TheSeems fork: with FOLLOW_UP_ON_QUESTION (default on), a reply that ends with a
         # question makes the device chime and open the mic for the answer. Meant to be used
         # with follow_up_listen_seconds 0, so the mic doesn't open after every reply.
+        # Once per wake: a question answered by noise would otherwise ask again, reopen the
+        # mic again, and loop (seen 2026-11-03, three rounds with nobody in the room).
         on_question = None
         if os.environ.get("FOLLOW_UP_ON_QUESTION", "true").lower() == "true":
             async def on_question():
+                if self._followup_used:
+                    logger.info("❓ question again, but the follow-up was already used this wake — mic stays shut")
+                    return
+                self._followup_used = True
                 await self.broadcast_json({"type": "request_follow_up"})
         if context_aggregator:
             pipeline_components.extend([
@@ -727,6 +734,7 @@ class WebSocketHandler:
                 logger.debug(f"🧽 mic-flush input clear no-op ({e!r})")
 
         async def _on_device_wake():
+            self._followup_used = False  # TheSeems fork: a new wake earns one question follow-up
             # va_client sends {"type":"wake"} on every wake (start_session). Mark
             # the turn boundary for the dangling-VAD guard (A): until the user
             # actually speaks, a server-VAD end-of-turn is a stale pre-wake
