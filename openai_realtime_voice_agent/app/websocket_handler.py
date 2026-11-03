@@ -1,6 +1,7 @@
 """WebSocket handler for managing WebSocket connections and pipelines."""
 import asyncio
 import json
+import os
 import logging
 import time
 import uuid
@@ -529,19 +530,26 @@ class WebSocketHandler:
         # aggregator can consume it) — opposite directions, so they need taps on
         # opposite sides of the service (see transcript_logger.py): "user" before
         # the LLM, "assistant" after it.
+        # TheSeems fork: with FOLLOW_UP_ON_QUESTION (default on), a reply that ends with a
+        # question makes the device chime and open the mic for the answer. Meant to be used
+        # with follow_up_listen_seconds 0, so the mic doesn't open after every reply.
+        on_question = None
+        if os.environ.get("FOLLOW_UP_ON_QUESTION", "true").lower() == "true":
+            async def on_question():
+                await self.broadcast_json({"type": "request_follow_up"})
         if context_aggregator:
             pipeline_components.extend([
                 context_aggregator.user(),
                 TranscriptLogger(capture="user"),
                 openai_service,
-                TranscriptLogger(capture="assistant"),
+                TranscriptLogger(capture="assistant", on_question=on_question),
                 context_aggregator.assistant(),
             ])
         else:
             pipeline_components.extend([
                 TranscriptLogger(capture="user"),
                 openai_service,
-                TranscriptLogger(capture="assistant"),
+                TranscriptLogger(capture="assistant", on_question=on_question),
             ])
 
         pipeline_components.append(output_activity_tracker)

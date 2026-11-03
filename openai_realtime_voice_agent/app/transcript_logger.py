@@ -54,10 +54,13 @@ class TranscriptLogger(FrameProcessor):
             the LLM), "user" (TranscriptionFrame, place BEFORE the LLM), or "both".
     """
 
-    def __init__(self, capture: str = "both", **kwargs):
+    def __init__(self, capture: str = "both", on_question=None, **kwargs):
         super().__init__(**kwargs)
         self._capture = capture
         self._assistant_buf: list[str] = []
+        # TheSeems fork: async callback run when a reply ends with a question, so the
+        # device can reopen the mic for the answer (request_follow_up) without a wake word.
+        self._on_question = on_question
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -74,6 +77,12 @@ class TranscriptLogger(FrameProcessor):
                 self._assistant_buf = []
                 if text:
                     logger.info(f"🤖 assistant: {text}")
+                    if self._on_question and text.rstrip(" \"'").endswith("?"):
+                        logger.info("❓ reply ends with a question → request_follow_up")
+                        try:
+                            await self._on_question()
+                        except Exception as e:
+                            logger.warning(f"⚠️ request_follow_up failed: {e!r}")
 
         if self._capture in ("user", "both"):
             if isinstance(frame, TranscriptionFrame):
