@@ -1,3 +1,9 @@
+## 0.6.6
+
+- The first turn after a (re)start no longer gets chopped under `server_vad`: pipecat's one-time conversation
+  setup is marked done at startup, as it already was for `semantic_vad`. Before, it ran on that first turn and
+  its `session.update` reset the server VAD mid-sentence.
+
 ## 0.6.5 (TheSeems fork)
 
 The question follow-up opens the mic at most once per wake word, so a question answered by room noise can't loop.

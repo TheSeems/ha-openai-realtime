@@ -814,7 +814,12 @@ class Application:
         # create_response=True), and there's no double — AND no startup speech.
         # The empty sentinel is harmlessly overwritten by the real context on the
         # first turn (both branches do `self._context = context`).
-        if self.turn_detection_type == "semantic_vad" and self.semantic_vad_create_response:
+        # TheSeems fork: the same applies under server_vad (OpenAI creates the response on commit). Without the
+        # pre-seed the setup ran on the first user turn after every (re)start, mid-sentence: its session.update
+        # reset the server VAD and that utterance came out chopped ("like some" for "is the heating on?").
+        server_creates = self.turn_detection_type == "server_vad" or (
+            self.turn_detection_type == "semantic_vad" and self.semantic_vad_create_response)
+        if server_creates:
             try:
                 from pipecat.processors.aggregators.llm_context import LLMContext
                 if self.openai_service is not None and getattr(self.openai_service, "_context", None) is None:
