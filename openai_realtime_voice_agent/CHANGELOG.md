@@ -1,3 +1,9 @@
+## 0.6.7
+
+- The phase no longer follows pipecat's emulated user-speaking frames (a transcript arriving outside a VAD
+  turn). A transcript 15 s late used to push the device to listening/thinking with no response due, until
+  the watchdog.
+
 ## 0.6.6
 
 - The first turn after a (re)start no longer gets chopped under `server_vad`: pipecat's one-time conversation

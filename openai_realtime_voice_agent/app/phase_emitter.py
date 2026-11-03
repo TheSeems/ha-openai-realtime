@@ -282,6 +282,13 @@ class PhaseEmitter(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
+        # TheSeems fork: pipecat fakes a user turn when a transcript arrives outside a VAD turn
+        # (emulated=True). Observed with a transcript 15 s late: listening -> thinking -> nothing
+        # due -> the 15 s watchdog. Only the server VAD drives the phase.
+        if isinstance(frame, (UserStartedSpeakingFrame, UserStoppedSpeakingFrame)) and getattr(frame, "emulated", False):
+            logger.info("📞 ignoring emulated user-speaking frame (late transcript, not VAD)")
+            return
+
         if isinstance(frame, UserStartedSpeakingFrame):
             self._suppress_thinking = False
             # A: a genuine utterance has begun this turn → not a dangling VAD,
